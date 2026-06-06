@@ -1,52 +1,84 @@
-// Storage Module - Data Persistence & Export/Import dengan Update functionality
-class StorageManager {
+// IndexedDB Storage Manager - Lebih powerful dari localStorage
+class IndexedDBManager {
     constructor() {
-        this.storageKey = 'encryptedNotes';
-        this.notes = this.loadNotes();
+        this.dbName = 'EncryptedNotesDB';
+        this.storeName = 'notes';
+        this.passwordStoreName = 'passwords';
+        this.dbVersion = 1;
+        this.db = null;
+        this.initDB();
     }
 
-    // Load notes from localStorage
-    loadNotes() {
-        try {
-            const stored = localStorage.getItem(this.storageKey);
-            return stored ? JSON.parse(stored) : [];
-        } catch (e) {
-            console.error('Error loading notes:', e);
-            return [];
-        }
-    }
+    // Initialize IndexedDB
+    async initDB() {
+        return new Promise((resolve, reject) => {
+            try {
+                const request = indexedDB.open(this.dbName, this.dbVersion);
 
-    // Save notes to localStorage
-    saveNotes() {
-        try {
-            localStorage.setItem(this.storageKey, JSON.stringify(this.notes));
-        } catch (e) {
-            console.error('Error saving notes:', e);
-            if (e.name === 'QuotaExceededError') {
-                alert('⚠️ Storage penuh! Hapus beberapa catatan lama.');
+                request.onerror = () => {
+                    console.error('IndexedDB error:', request.error);
+                    reject(request.error);
+                };
+
+                request.onsuccess = () => {
+                    this.db = request.result;
+                    console.log('✅ IndexedDB initialized successfully');
+                    resolve(this.db);
+                };
+
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    
+                    // Create notes object store
+                    if (!db.objectStoreNames.contains(this.storeName)) {
+                        const notesStore = db.createObjectStore(this.storeName, { keyPath: 'id' });
+                        notesStore.createIndex('createdAt', 'createdAt', { unique: false });
+                        notesStore.createIndex('title', 'title', { unique: false });
+                        console.log('Notes store created');
+                    }
+
+                    // Create passwords object store
+                    if (!db.objectStoreNames.contains(this.passwordStoreName)) {
+                        db.createObjectStore(this.passwordStoreName, { keyPath: 'key' });
+                        console.log('Passwords store created');
+                    }
+                };
+            } catch (e) {
+                console.error('DB initialization error:', e);
+                reject(e);
             }
-        }
+        });
     }
 
-    // Add a new note
-    addNote(note) {
+    // Add note
+    async addNote(note) {
         try {
             const newNote = {
                 id: Date.now(),
                 title: note.title || 'Catatan Tanpa Judul',
                 content: note.content,
                 encryptedContent: encryptionManager.encryptNoteContent(note.content),
-                createdAt: new Date().toLocaleString('id-ID'),
-                updatedAt: new Date().toLocaleString('id-ID'),
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
                 hasLayer2: note.hasLayer2 || false,
                 languagesDetected: note.languagesDetected || [],
                 detectionInfo: note.detectionInfo || {},
                 tone: note.tone || 'neutral'
             };
 
-            this.notes.push(newNote);
-            this.saveNotes();
-            return { success: true, note: newNote, message: 'Catatan berhasil ditambahkan!' };
+            return new Promise((resolve, reject) => {
+                const transaction = this.db.transaction([this.storeName], 'readwrite');
+                const store = transaction.objectStore(this.storeName);
+                const request = store.add(newNote);
+
+                request.onsuccess = () => {
+                    resolve({ success: true, note: newNote, message: 'Catatan berhasil ditambahkan!' });
+                };
+
+                request.onerror = () => {
+                    reject({ success: false, message: 'Gagal menambahkan catatan!' });
+                };
+            });
         } catch (e) {
             console.error('Error adding note:', e);
             return { success: false, message: 'Gagal menambahkan catatan!' };
@@ -54,38 +86,81 @@ class StorageManager {
     }
 
     // Get all notes
-    getNotes() {
-        return this.notes;
+    async getAllNotes() {
+        return new Promise((resolve, reject) => {
+            try {
+                const transaction = this.db.transaction([this.storeName], 'readonly');
+                const store = transaction.objectStore(this.storeName);
+                const request = store.getAll();
+
+                request.onsuccess = () => {
+                    resolve(request.result);
+                };
+
+                request.onerror = () => {
+                    reject([]);
+                };
+            } catch (e) {
+                console.error('Error getting notes:', e);
+                reject([]);
+            }
+        });
     }
 
     // Get note by ID
-    getNoteById(id) {
-        return this.notes.find(note => note.id === id);
+    async getNoteById(id) {
+        return new Promise((resolve, reject) => {
+            try {
+                const transaction = this.db.transaction([this.storeName], 'readonly');
+                const store = transaction.objectStore(this.storeName);
+                const request = store.get(id);
+
+                request.onsuccess = () => {
+                    resolve(request.result);
+                };
+
+                request.onerror = () => {
+                    reject(null);
+                };
+            } catch (e) {
+                console.error('Error getting note:', e);
+                reject(null);
+            }
+        });
     }
 
-    // Update note (FIX untuk edit functionality)
-    updateNote(id, updatedData) {
+    // Update note
+    async updateNote(id, updatedData) {
         try {
-            const noteIndex = this.notes.findIndex(note => note.id === id);
-            if (noteIndex !== -1) {
-                const oldNote = this.notes[noteIndex];
-                
-                // Update content jika ada
-                if (updatedData.content !== undefined) {
-                    updatedData.encryptedContent = encryptionManager.encryptNoteContent(updatedData.content);
-                    updatedData.title = updatedData.title || updatedData.content.substring(0, 50) + (updatedData.content.length > 50 ? '...' : '');
-                }
-
-                this.notes[noteIndex] = {
-                    ...oldNote,
-                    ...updatedData,
-                    updatedAt: new Date().toLocaleString('id-ID')
-                };
-                
-                this.saveNotes();
-                return { success: true, note: this.notes[noteIndex], message: 'Catatan berhasil diupdate!' };
+            const note = await this.getNoteById(id);
+            if (!note) {
+                return { success: false, message: 'Catatan tidak ditemukan!' };
             }
-            return { success: false, message: 'Catatan tidak ditemukan!' };
+
+            const updated = {
+                ...note,
+                ...updatedData,
+                updatedAt: new Date().toISOString()
+            };
+
+            if (updatedData.content) {
+                updated.encryptedContent = encryptionManager.encryptNoteContent(updatedData.content);
+                updated.title = updatedData.title || updatedData.content.substring(0, 50);
+            }
+
+            return new Promise((resolve, reject) => {
+                const transaction = this.db.transaction([this.storeName], 'readwrite');
+                const store = transaction.objectStore(this.storeName);
+                const request = store.put(updated);
+
+                request.onsuccess = () => {
+                    resolve({ success: true, note: updated, message: 'Catatan berhasil diupdate!' });
+                };
+
+                request.onerror = () => {
+                    reject({ success: false, message: 'Gagal mengupdate catatan!' });
+                };
+            });
         } catch (e) {
             console.error('Error updating note:', e);
             return { success: false, message: 'Gagal mengupdate catatan!' };
@@ -93,77 +168,33 @@ class StorageManager {
     }
 
     // Delete note
-    deleteNote(id) {
-        try {
-            const initialLength = this.notes.length;
-            this.notes = this.notes.filter(note => note.id !== id);
-            
-            if (this.notes.length < initialLength) {
-                this.saveNotes();
-                return { success: true, message: 'Catatan berhasil dihapus!' };
-            }
-            return { success: false, message: 'Catatan tidak ditemukan!' };
-        } catch (e) {
-            console.error('Error deleting note:', e);
-            return { success: false, message: 'Gagal menghapus catatan!' };
-        }
-    }
+    async deleteNote(id) {
+        return new Promise((resolve, reject) => {
+            try {
+                const transaction = this.db.transaction([this.storeName], 'readwrite');
+                const store = transaction.objectStore(this.storeName);
+                const request = store.delete(id);
 
-    // Export all notes as JSON
-    exportAsJSON() {
-        try {
-            const dataStr = JSON.stringify(this.notes, null, 2);
-            const dataBlob = new Blob([dataStr], { type: 'application/json' });
-            const url = URL.createObjectURL(dataBlob);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `encrypted-notes-${new Date().toISOString().split('T')[0]}.json`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-            return { success: true, message: `${this.notes.length} catatan berhasil diexport!` };
-        } catch (e) {
-            console.error('Error exporting:', e);
-            return { success: false, message: 'Gagal mengexport catatan!' };
-        }
-    }
-
-    // Import notes from JSON (dengan konfirmasi)
-    importFromJSON(jsonData, merge = false) {
-        try {
-            const importedNotes = JSON.parse(jsonData);
-            if (!Array.isArray(importedNotes)) {
-                return { success: false, message: 'Format JSON tidak valid!' };
-            }
-
-            if (merge) {
-                // Merge dengan data lama (avoid duplicate)
-                const existingIds = new Set(this.notes.map(n => n.id));
-                const newNotes = importedNotes.filter(n => !existingIds.has(n.id));
-                this.notes = [...this.notes, ...newNotes];
-                return { 
-                    success: true, 
-                    message: `${newNotes.length} catatan baru berhasil diimport! ${importedNotes.length - newNotes.length} duplikat diabaikan.` 
+                request.onsuccess = () => {
+                    resolve({ success: true, message: 'Catatan berhasil dihapus!' });
                 };
-            } else {
-                // Replace semua data
-                this.notes = importedNotes;
-                return { success: true, message: `${importedNotes.length} catatan berhasil diimport!` };
+
+                request.onerror = () => {
+                    reject({ success: false, message: 'Gagal menghapus catatan!' });
+                };
+            } catch (e) {
+                console.error('Error deleting note:', e);
+                reject({ success: false, message: 'Gagal menghapus catatan!' });
             }
-            
-            this.saveNotes();
-        } catch (error) {
-            console.error('Import error:', error);
-            return { success: false, message: 'Format file tidak valid atau rusak!' };
-        }
+        });
     }
 
     // Search notes
-    searchNotes(query) {
+    async searchNotes(query) {
         try {
+            const notes = await this.getAllNotes();
             const lowerQuery = query.toLowerCase();
-            return this.notes.filter(note => 
+            return notes.filter(note =>
                 note.title.toLowerCase().includes(lowerQuery) ||
                 note.content.toLowerCase().includes(lowerQuery)
             );
@@ -173,43 +204,102 @@ class StorageManager {
         }
     }
 
-    // Filter notes by language
-    filterByLanguage(language) {
+    // Export all notes as JSON
+    async exportAsJSON() {
         try {
-            return this.notes.filter(note => 
-                note.languagesDetected.includes(language)
-            );
+            const notes = await this.getAllNotes();
+            const dataStr = JSON.stringify(notes, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `encrypted-notes-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            return { success: true, message: `${notes.length} catatan berhasil diexport!` };
         } catch (e) {
-            console.error('Filter error:', e);
-            return [];
+            console.error('Export error:', e);
+            return { success: false, message: 'Gagal mengexport catatan!' };
         }
     }
 
-    // Clear all notes (dengan konfirmasi)
-    clearAllNotes() {
+    // Import notes from JSON
+    async importFromJSON(jsonData, merge = false) {
         try {
-            this.notes = [];
-            this.saveNotes();
-            return { success: true, message: 'Semua catatan telah dihapus!' };
+            const importedNotes = JSON.parse(jsonData);
+            if (!Array.isArray(importedNotes)) {
+                return { success: false, message: 'Format JSON tidak valid!' };
+            }
+
+            if (merge) {
+                // Merge with existing notes
+                const existingNotes = await this.getAllNotes();
+                const existingIds = new Set(existingNotes.map(n => n.id));
+                let addedCount = 0;
+
+                for (let note of importedNotes) {
+                    if (!existingIds.has(note.id)) {
+                        await this.addNote(note);
+                        addedCount++;
+                    }
+                }
+
+                return {
+                    success: true,
+                    message: `${addedCount} catatan baru berhasil diimport! ${importedNotes.length - addedCount} duplikat diabaikan.`
+                };
+            } else {
+                // Replace all notes
+                await this.clearAllNotes();
+                for (let note of importedNotes) {
+                    await this.addNote(note);
+                }
+                return { success: true, message: `${importedNotes.length} catatan berhasil diimport!` };
+            }
         } catch (e) {
-            console.error('Error clearing notes:', e);
-            return { success: false, message: 'Gagal menghapus catatan!' };
+            console.error('Import error:', e);
+            return { success: false, message: 'Format file tidak valid atau rusak!' };
         }
+    }
+
+    // Clear all notes
+    async clearAllNotes() {
+        return new Promise((resolve, reject) => {
+            try {
+                const transaction = this.db.transaction([this.storeName], 'readwrite');
+                const store = transaction.objectStore(this.storeName);
+                const request = store.clear();
+
+                request.onsuccess = () => {
+                    resolve({ success: true, message: 'Semua catatan telah dihapus!' });
+                };
+
+                request.onerror = () => {
+                    reject({ success: false, message: 'Gagal menghapus catatan!' });
+                };
+            } catch (e) {
+                console.error('Error clearing notes:', e);
+                reject({ success: false, message: 'Gagal menghapus catatan!' });
+            }
+        });
     }
 
     // Get statistics
-    getStatistics() {
+    async getStatistics() {
         try {
+            const notes = await this.getAllNotes();
             const stats = {
-                totalNotes: this.notes.length,
-                layer2Notes: this.notes.filter(n => n.hasLayer2).length,
-                totalCharacters: this.notes.reduce((sum, n) => sum + n.content.length, 0),
-                averageLength: this.notes.length > 0 ? Math.round(this.notes.reduce((sum, n) => sum + n.content.length, 0) / this.notes.length) : 0,
-                longestNote: this.notes.length > 0 ? Math.max(...this.notes.map(n => n.content.length)) : 0,
-                shortestNote: this.notes.length > 0 ? Math.min(...this.notes.map(n => n.content.length)) : 0,
-                createdDates: this.notes.map(n => n.createdAt),
-                languageBreakdown: this.getLanguageBreakdown(),
-                toneBreakdown: this.getToneBreakdown()
+                totalNotes: notes.length,
+                layer2Notes: notes.filter(n => n.hasLayer2).length,
+                totalCharacters: notes.reduce((sum, n) => sum + n.content.length, 0),
+                averageLength: notes.length > 0 ? Math.round(notes.reduce((sum, n) => sum + n.content.length, 0) / notes.length) : 0,
+                longestNote: notes.length > 0 ? Math.max(...notes.map(n => n.content.length)) : 0,
+                shortestNote: notes.length > 0 ? Math.min(...notes.map(n => n.content.length)) : 0,
+                createdDates: notes.map(n => n.createdAt),
+                languageBreakdown: this.getLanguageBreakdown(notes),
+                toneBreakdown: this.getToneBreakdown(notes)
             };
             return stats;
         } catch (e) {
@@ -228,33 +318,121 @@ class StorageManager {
         }
     }
 
-    // Get language breakdown
-    getLanguageBreakdown() {
-        try {
-            const breakdown = {};
-            this.notes.forEach(note => {
-                note.languagesDetected.forEach(lang => {
-                    breakdown[lang] = (breakdown[lang] || 0) + 1;
-                });
+    getLanguageBreakdown(notes) {
+        const breakdown = {};
+        notes.forEach(note => {
+            note.languagesDetected.forEach(lang => {
+                breakdown[lang] = (breakdown[lang] || 0) + 1;
             });
-            return breakdown;
-        } catch (e) {
-            return {};
-        }
+        });
+        return breakdown;
     }
 
-    // Get tone breakdown
-    getToneBreakdown() {
-        try {
-            const breakdown = {};
-            this.notes.forEach(note => {
-                const tone = note.tone || 'unknown';
-                breakdown[tone] = (breakdown[tone] || 0) + 1;
-            });
-            return breakdown;
-        } catch (e) {
-            return {};
-        }
+    getToneBreakdown(notes) {
+        const breakdown = {};
+        notes.forEach(note => {
+            const tone = note.tone || 'unknown';
+            breakdown[tone] = (breakdown[tone] || 0) + 1;
+        });
+        return breakdown;
+    }
+
+    // Save password
+    async savePassword(key, value) {
+        return new Promise((resolve, reject) => {
+            try {
+                const transaction = this.db.transaction([this.passwordStoreName], 'readwrite');
+                const store = transaction.objectStore(this.passwordStoreName);
+                const request = store.put({ key, value });
+
+                request.onsuccess = () => resolve(true);
+                request.onerror = () => reject(false);
+            } catch (e) {
+                reject(false);
+            }
+        });
+    }
+
+    // Get password
+    async getPassword(key) {
+        return new Promise((resolve, reject) => {
+            try {
+                const transaction = this.db.transaction([this.passwordStoreName], 'readonly');
+                const store = transaction.objectStore(this.passwordStoreName);
+                const request = store.get(key);
+
+                request.onsuccess = () => resolve(request.result ? request.result.value : null);
+                request.onerror = () => reject(null);
+            } catch (e) {
+                reject(null);
+            }
+        });
+    }
+
+    // Delete password
+    async deletePassword(key) {
+        return new Promise((resolve, reject) => {
+            try {
+                const transaction = this.db.transaction([this.passwordStoreName], 'readwrite');
+                const store = transaction.objectStore(this.passwordStoreName);
+                const request = store.delete(key);
+
+                request.onsuccess = () => resolve(true);
+                request.onerror = () => reject(false);
+            } catch (e) {
+                reject(false);
+            }
+        });
+    }
+}
+
+// Global IndexedDB manager
+const idbManager = new IndexedDBManager();
+
+// Fallback StorageManager (tetap ada untuk backward compatibility)
+class StorageManager {
+    constructor() {
+        this.notes = [];
+    }
+
+    async addNote(note) {
+        return await idbManager.addNote(note);
+    }
+
+    async getNotes() {
+        return await idbManager.getAllNotes();
+    }
+
+    async getNoteById(id) {
+        return await idbManager.getNoteById(id);
+    }
+
+    async updateNote(id, updatedData) {
+        return await idbManager.updateNote(id, updatedData);
+    }
+
+    async deleteNote(id) {
+        return await idbManager.deleteNote(id);
+    }
+
+    async exportAsJSON() {
+        return await idbManager.exportAsJSON();
+    }
+
+    async importFromJSON(jsonData, merge = false) {
+        return await idbManager.importFromJSON(jsonData, merge);
+    }
+
+    async searchNotes(query) {
+        return await idbManager.searchNotes(query);
+    }
+
+    async getStatistics() {
+        return await idbManager.getStatistics();
+    }
+
+    async clearAllNotes() {
+        return await idbManager.clearAllNotes();
     }
 }
 
