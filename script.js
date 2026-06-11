@@ -133,7 +133,7 @@ async function setupLayer1() {
 
 // ===== NOTES MANAGEMENT =====
 
-function addNote() {
+async function addNote() {
     try {
         const noteInput = document.getElementById('noteInput');
         const content = noteInput.value;
@@ -178,7 +178,7 @@ function addNote() {
             layer2Setup.classList.remove('hidden');
             requiresLayer2 = true;
         } else {
-            saveNoteToStorage(content, detection);
+            await saveNoteToStorage(content, detection);
         }
     } catch (e) {
         console.error('Error in addNote:', e);
@@ -186,7 +186,7 @@ function addNote() {
     }
 }
 
-function saveNoteToStorage(content, detection) {
+async function saveNoteToStorage(content, detection) {
     try {
         const noteObj = {
             title: content.substring(0, 50) + (content.length > 50 ? '...' : ''),
@@ -199,10 +199,10 @@ function saveNoteToStorage(content, detection) {
 
         let result;
         if (editingNoteId) {
-            result = storageManager.updateNote(editingNoteId, noteObj);
+            result = await storageManager.updateNote(editingNoteId, noteObj);
             editingNoteId = null;
         } else {
-            result = storageManager.addNote(noteObj);
+            result = await storageManager.addNote(noteObj);
         }
 
         if (result.success) {
@@ -213,7 +213,7 @@ function saveNoteToStorage(content, detection) {
             requiresLayer2 = false;
             
             alert('✅ ' + result.message);
-            renderNotesList();
+            await renderNotesList();
         } else {
             alert('❌ ' + result.message);
         }
@@ -238,7 +238,7 @@ async function setupLayer2() {
             const content = document.getElementById('noteInput').value;
             const detection = detectionManager.getSummary(content);
             
-            saveNoteToStorage(content, detection);
+            await saveNoteToStorage(content, detection);
             document.getElementById('password2').value = '';
         } else {
             alert('❌ ' + result.message);
@@ -249,10 +249,10 @@ async function setupLayer2() {
     }
 }
 
-function renderNotesList() {
+async function renderNotesList() {
     try {
         const notesList = document.getElementById('notesList');
-        const notes = storageManager.getNotes();
+        const notes = await storageManager.getNotes();
 
         if (notes.length === 0) {
             notesList.innerHTML = '<p style="text-align: center; color: #999;">Belum ada catatan. Buat yang baru! 📝</p>';
@@ -280,9 +280,9 @@ function renderNotesList() {
     }
 }
 
-function editNote(id) {
+async function editNote(id) {
     try {
-        const note = storageManager.getNoteById(id);
+        const note = await storageManager.getNoteById(id);
         if (note) {
             editingNoteId = id;
             document.getElementById('noteInput').value = note.content;
@@ -298,13 +298,13 @@ function editNote(id) {
     }
 }
 
-function deleteNote(id) {
+async function deleteNote(id) {
     try {
         if (confirm('🗑️ Yakin ingin menghapus catatan ini? Tindakan ini tidak bisa dibatalkan.')) {
-            const result = storageManager.deleteNote(id);
+            const result = await storageManager.deleteNote(id);
             if (result.success) {
                 alert('✅ ' + result.message);
-                renderNotesList();
+                await renderNotesList();
             } else {
                 alert('❌ ' + result.message);
             }
@@ -414,14 +414,14 @@ function logout() {
 
 // ===== EXPORT & IMPORT =====
 
-function exportToFile() {
+async function exportToFile() {
     try {
-        const notes = storageManager.getNotes();
+        const notes = await storageManager.getNotes();
         if (notes.length === 0) {
             alert('⚠️ Tidak ada catatan untuk diekspor!');
             return;
         }
-        const result = storageManager.exportAsJSON();
+        const result = await storageManager.exportAsJSON();
         alert('✅ ' + result.message + ' File sudah diunduh!');
     } catch (e) {
         console.error('Error exporting:', e);
@@ -439,14 +439,14 @@ function handleFileImport(event) {
         if (!file) return;
 
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
             try {
                 const isMerge = confirm('Merge dengan catatan lama? (Cancel = Replace semua)');
-                const result = storageManager.importFromJSON(e.target.result, isMerge);
+                const result = await storageManager.importFromJSON(e.target.result, isMerge);
                 alert(result.success ? '✅ ' + result.message : '❌ ' + result.message);
                 
                 if (result.success) {
-                    renderNotesList();
+                    await renderNotesList();
                 }
             } catch (error) {
                 alert('❌ Gagal memproses file!');
@@ -464,14 +464,14 @@ function handleFileImport(event) {
 
 // ===== SEARCH & FILTER =====
 
-function searchNotes(query) {
+async function searchNotes(query) {
     try {
         if (!query.trim()) {
-            renderNotesList();
+            await renderNotesList();
             return;
         }
 
-        const results = storageManager.searchNotes(query);
+        const results = await storageManager.searchNotes(query);
         const notesList = document.getElementById('notesList');
 
         if (results.length === 0) {
