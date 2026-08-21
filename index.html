@@ -3,31 +3,99 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Keep Notes — Encrypted</title>
+  <title>Keep Notes — Encrypted Cloud</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main>
-    <h1>Keep Notes — Encrypted (client-side)</h1>
+  <div id="app">
+    <!-- Login Screen -->
+    <div id="loginScreen" class="screen">
+      <main class="auth-container">
+        <h1>🔒 Keep Notes</h1>
+        <p class="subtitle">Catatan Terenkripsi, Akses Dari Mana Saja</p>
+        
+        <div id="authForm">
+          <div class="auth-tabs">
+            <button id="loginTab" class="tab active" onclick="switchAuthTab('login')">Login</button>
+            <button id="registerTab" class="tab" onclick="switchAuthTab('register')">Daftar</button>
+          </div>
 
-    <div class="row">
-      <label>Password (shared):</label>
-      <input id="password" type="password" placeholder="masukkan password...">
-      <button id="loadBtn">Buka</button>
-      <button id="saveBtn">Simpan</button>
+          <!-- Login Form -->
+          <form id="loginForm" class="auth-form active">
+            <div class="form-group">
+              <label>Email:</label>
+              <input id="loginEmail" type="email" placeholder="email@example.com" required>
+            </div>
+            <div class="form-group">
+              <label>Password:</label>
+              <input id="loginPassword" type="password" placeholder="password" required>
+            </div>
+            <button type="button" class="btn btn-primary" onclick="handleLogin()">Login</button>
+            <div id="loginStatus" class="status"></div>
+          </form>
+
+          <!-- Register Form -->
+          <form id="registerForm" class="auth-form">
+            <div class="form-group">
+              <label>Email:</label>
+              <input id="registerEmail" type="email" placeholder="email@example.com" required>
+            </div>
+            <div class="form-group">
+              <label>Password:</label>
+              <input id="registerPassword" type="password" placeholder="minimal 8 karakter" required>
+            </div>
+            <div class="form-group">
+              <label>Konfirmasi Password:</label>
+              <input id="registerPassword2" type="password" placeholder="ulangi password" required>
+            </div>
+            <button type="button" class="btn btn-primary" onclick="handleRegister()">Daftar</button>
+            <div id="registerStatus" class="status"></div>
+          </form>
+        </div>
+      </main>
     </div>
 
-    <div id="status">Status: ready</div>
+    <!-- Notes Screen -->
+    <div id="notesScreen" class="screen hidden">
+      <header class="app-header">
+        <h1>📝 Keep Notes</h1>
+        <div class="header-right">
+          <span id="syncStatus" class="sync-status"></span>
+          <span id="userInfo" class="user-info"></span>
+          <button id="logoutBtn" class="btn btn-small" onclick="handleLogout()">Logout</button>
+        </div>
+      </header>
 
-    <textarea id="note" placeholder="Tulis catatan di sini..." rows="15"></textarea>
+      <main class="notes-container">
+        <!-- Create Note Section -->
+        <div class="create-section">
+          <input id="noteTitle" type="text" placeholder="Judul catatan..." class="input-title">
+          <textarea id="noteContent" placeholder="Tulis catatan di sini..." rows="8" class="textarea-content"></textarea>
+          <div class="action-buttons">
+            <button class="btn btn-success" onclick="handleSaveNote()">💾 Simpan</button>
+            <button class="btn btn-secondary" onclick="handleClearForm()">🗑️ Bersihkan</button>
+          </div>
+        </div>
 
-    <div class="row">
-      <input id="shareLink" style="flex:1" readonly>
-      <button id="copyBtn">Copy Link</button>
+        <!-- Notes List -->
+        <div class="notes-list-section">
+          <h2>Catatan Saya</h2>
+          <div id="notesList" class="notes-list"></div>
+        </div>
+      </main>
     </div>
-  </main>
+  </div>
 
+  <!-- Appwrite SDK -->
+  <script src="https://cdn.jsdelivr.net/npm/appwrite@latest/dist/appwrite.min.js"></script>
+  
+  <!-- App Scripts -->
   <script src="js/crypto.js"></script>
-  <script src="js/no-backend-app.js"></script>
+  <script src="js/appwrite/config.js"></script>
+  <script src="js/appwrite/auth.js"></script>
+  <script src="js/appwrite/database.js"></script>
+  <script src="js/appwrite/sync.js"></script>
+  <script src="storage.js"></script>
+  <script src="app-new.js"></script>
 </body>
 </html>
